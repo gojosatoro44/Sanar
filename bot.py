@@ -65,14 +65,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"User {user_id} started the bot")
         
-        # Check if user is admin
-        if user_id == ADMIN_ID:
-            await show_admin_menu(update, context)
-            return
-        
         # Check if user is already approved
         if user_id in approved_users:
-            await show_payment_format(update, context)
+            await show_main_menu(update, context)
+            return
+        
+        # Check if user is admin (auto-approve admin)
+        if user_id == ADMIN_ID:
+            approved_users.add(user_id)
+            await show_main_menu(update, context)
             return
         
         # Store user info for approval
@@ -117,8 +118,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ An error occurred. Please try again later."
         )
 
-async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show admin menu with special options"""
+async def show_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show main menu with all options for approved users"""
     keyboard = [
         [InlineKeyboardButton("📄 Payment Format", callback_data="payment_format")],
         [InlineKeyboardButton("📨 Message User by ID", callback_data="message_user")]
@@ -127,13 +128,13 @@ async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if update.callback_query:
         await update.callback_query.message.reply_text(
-            "👑 Welcome Admin!\n\n"
+            "👋 Welcome to the bot!\n\n"
             "Choose an option:",
             reply_markup=reply_markup
         )
     else:
         await update.message.reply_text(
-            "👑 Welcome Admin!\n\n"
+            "👋 Welcome to the bot!\n\n"
             "Choose an option:",
             reply_markup=reply_markup
         )
@@ -144,14 +145,10 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         query = update.callback_query
         await query.answer()
         
-        user_id = query.from_user.id
-        if user_id != ADMIN_ID:
-            await query.edit_message_text("❌ This feature is for admin only!")
-            return
-        
         await query.edit_message_text(
             "📨 Send me the User ID:\n\n"
-            "Example: `123456789`",
+            "Example: `1234567890`\n\n"
+            "I'll create a clickable link to message that user.",
             parse_mode='Markdown'
         )
         
@@ -161,14 +158,14 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
 async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get user ID and create clickable link"""
+    """Get user ID and create clickable link - FIXED"""
     try:
         user_input = update.message.text.strip()
         
         # Check if it's a valid user ID
         if not user_input.isdigit() or len(user_input) < 5:
             await update.message.reply_text(
-                "❌ Invalid User ID. Please send a valid numeric User ID (e.g., 123456789):"
+                "❌ Invalid User ID. Please send a valid numeric User ID (e.g., 1234567890):"
             )
             return WAITING_FOR_USER_ID
         
@@ -180,7 +177,7 @@ async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_
         # Create clickable button
         keyboard = [[
             InlineKeyboardButton(
-                "📨 Send Message",
+                f"📨 Message User {user_id}",
                 url=telegram_link
             )
         ]]
@@ -193,8 +190,8 @@ async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_
             parse_mode='Markdown'
         )
         
-        # Show admin menu again
-        await show_admin_menu(update, context)
+        # Show main menu again
+        await show_main_menu(update, context)
         
         return ConversationHandler.END
     except Exception as e:
@@ -269,27 +266,6 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     except Exception as e:
         logger.error(f"Error in handle_approval: {e}")
-
-async def show_payment_format(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show payment format option to user"""
-    try:
-        keyboard = [[InlineKeyboardButton("📄 Payment Format", callback_data="payment_format")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if update.callback_query:
-            await update.callback_query.message.reply_text(
-                "👋 Welcome to the bot!\n\n"
-                "Click the button below to format user IDs:",
-                reply_markup=reply_markup
-            )
-        else:
-            await update.message.reply_text(
-                "👋 Welcome to the bot!\n\n"
-                "Click the button below to format user IDs:",
-                reply_markup=reply_markup
-            )
-    except Exception as e:
-        logger.error(f"Error in show_payment_format: {e}")
 
 async def handle_payment_format(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle payment format option"""
@@ -416,17 +392,8 @@ async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Clear user data
         context.user_data.clear()
         
-        # Show appropriate menu based on user
-        user_id = update.effective_user.id
-        if user_id == ADMIN_ID:
-            await show_admin_menu(update, context)
-        else:
-            keyboard = [[InlineKeyboardButton("📄 Format More IDs", callback_data="payment_format")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_text(
-                "Click below to format more IDs:",
-                reply_markup=reply_markup
-            )
+        # Show main menu again
+        await show_main_menu(update, context)
         
         return ConversationHandler.END
     except Exception as e:
@@ -451,28 +418,14 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a help message"""
     try:
-        user_id = update.effective_user.id
-        help_text = "🤖 Bot Commands:\n\n"
-        
-        if user_id == ADMIN_ID:
-            help_text += (
-                "👑 **Admin Commands:**\n"
-                "/start - Show admin menu\n"
-                "/help - Show this help message\n"
-                "/cancel - Cancel current operation\n\n"
-                "📋 **Admin Features:**\n"
-                "1. Approve/Reject user requests\n"
-                "2. Format payment IDs\n"
-                "3. Generate message links by User ID\n\n"
-            )
-        else:
-            help_text += (
-                "/start - Start the bot and request approval\n"
-                "/help - Show this help message\n"
-                "/cancel - Cancel current operation\n\n"
-            )
-        
-        help_text += (
+        help_text = (
+            "🤖 Bot Commands:\n\n"
+            "/start - Start the bot and request approval\n"
+            "/help - Show this help message\n"
+            "/cancel - Cancel current operation\n\n"
+            "📋 **Features for Approved Users:**\n"
+            "1. 📄 Payment Format - Extract and format user IDs with amounts\n"
+            "2. 📨 Message User by ID - Create clickable links to message users\n\n"
             f"For any queries, DM {OWNER_USERNAME}"
         )
         await update.message.reply_text(help_text)
@@ -512,7 +465,7 @@ def main():
         # Add callback query handler for payment format option
         application.add_handler(CallbackQueryHandler(handle_payment_format, pattern=r'^payment_format$'))
         
-        # Add callback query handler for message user option (admin only)
+        # Add callback query handler for message user option
         application.add_handler(CallbackQueryHandler(handle_message_user, pattern=r'^message_user$'))
         
         # Create conversation handler for payment format
@@ -542,8 +495,9 @@ def main():
             allow_reentry=True
         )
         
-        application.add_handler(payment_conv_handler)
+        # Add conversation handlers in correct order
         application.add_handler(message_conv_handler)
+        application.add_handler(payment_conv_handler)
         
         # Start the Bot
         logger.info("🤖 Bot is starting...")
