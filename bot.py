@@ -150,8 +150,8 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         
         await query.edit_message_text(
-            "📨 Send me the User ID you want to message:\n\n"
-            "Example: `1234567890`",
+            "📨 Send me the User ID:\n\n"
+            "Example: `123456789`",
             parse_mode='Markdown'
         )
         
@@ -161,31 +161,34 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
 async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get user ID and provide clickable link"""
+    """Get user ID and create clickable link"""
     try:
         user_input = update.message.text.strip()
         
         # Check if it's a valid user ID
         if not user_input.isdigit() or len(user_input) < 5:
             await update.message.reply_text(
-                "❌ Invalid User ID. Please send a valid numeric User ID (e.g., 1234567890):"
+                "❌ Invalid User ID. Please send a valid numeric User ID (e.g., 123456789):"
             )
             return WAITING_FOR_USER_ID
         
-        user_id = int(user_input)
+        user_id = user_input
         
-        # Create clickable link button
+        # Create the Telegram deep link
+        telegram_link = f"tg://openmessage?user_id={user_id}"
+        
+        # Create clickable button
         keyboard = [[
             InlineKeyboardButton(
-                f"📨 Message User {user_id}",
-                url=f"tg://openmessage?user_id={user_id}"
+                "📨 Send Message",
+                url=telegram_link
             )
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            f"✅ User ID: `{user_id}`\n\n"
-            "Click the button below to message this user directly:",
+            f"✅ Click the button below to message User ID `{user_id}`:\n\n"
+            f"**Link:** `{telegram_link}`",
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
@@ -460,7 +463,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "📋 **Admin Features:**\n"
                 "1. Approve/Reject user requests\n"
                 "2. Format payment IDs\n"
-                "3. Message users by ID\n\n"
+                "3. Generate message links by User ID\n\n"
             )
         else:
             help_text += (
