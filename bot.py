@@ -42,7 +42,7 @@ except ValueError:
     sys.exit(1)
 
 # Conversation states
-WAITING_FOR_IDS, WAITING_FOR_AMOUNT = range(2)
+WAITING_FOR_IDS, WAITING_FOR_AMOUNT, WAITING_FOR_USER_ID, WAITING_FOR_MESSAGE = range(4)
 
 # Store approvals in memory (will reset on restart)
 pending_approvals = {}
@@ -64,6 +64,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = user.id
         
         logger.info(f"User {user_id} started the bot")
+        
+        # Check if user is admin
+        if user_id == ADMIN_ID:
+            await show_admin_menu(update, context)
+            return
         
         # Check if user is already approved
         if user_id in approved_users:
@@ -111,6 +116,128 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "⚠️ An error occurred. Please try again later."
         )
+
+async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show admin menu with special options"""
+    keyboard = [
+        [InlineKeyboardButton("📄 Payment Format", callback_data="payment_format")],
+        [InlineKeyboardButton("📨 Message User by ID", callback_data="message_user")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.message.reply_text(
+            "👑 Welcome Admin!\n\n"
+            "Choose an option:",
+            reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(
+            "👑 Welcome Admin!\n\n"
+            "Choose an option:",
+            reply_markup=reply_markup
+        )
+
+async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start conversation to message user by ID"""
+    try:
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = query.from_user.id
+        if user_id != ADMIN_ID:
+            await query.edit_message_text("❌ This feature is for admin only!")
+            return
+        
+        await query.edit_message_text(
+            "📨 Send me the User ID you want to message:\n\n"
+            "Example: `1234567890`",
+            parse_mode='Markdown'
+        )
+        
+        return WAITING_FOR_USER_ID
+    except Exception as e:
+        logger.error(f"Error in handle_message_user: {e}")
+        return ConversationHandler.END
+
+async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Get user ID to message"""
+    try:
+        user_input = update.message.text.strip()
+        
+        # Check if it's a valid user ID
+        if not user_input.isdigit() or len(user_input) < 5:
+            await update.message.reply_text(
+                "❌ Invalid User ID. Please send a valid numeric User ID (e.g., 1234567890):"
+            )
+            return WAITING_FOR_USER_ID
+        
+        user_id = int(user_input)
+        context.user_data['message_user_id'] = user_id
+        
+        await update.message.reply_text(
+            f"✅ User ID received: `{user_id}`\n\n"
+            "Now send me the message you want to send to this user:",
+            parse_mode='Markdown'
+        )
+        
+        return WAITING_FOR_MESSAGE
+    except Exception as e:
+        logger.error(f"Error in get_user_id_for_message: {e}")
+        await update.message.reply_text(
+            "⚠️ An error occurred. Please try again with /start"
+        )
+        return ConversationHandler.END
+
+async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send message to user"""
+    try:
+        message_text = update.message.text
+        target_user_id = context.user_data.get('message_user_id')
+        
+        if not target_user_id:
+            await update.message.reply_text(
+                "❌ No user ID found. Please start over with /start"
+            )
+            return ConversationHandler.END
+        
+        # Try to send message
+        try:
+            await context.bot.send_message(
+                chat_id=target_user_id,
+                text=f"📨 Message from Admin:\n\n{message_text}"
+            )
+            
+            await update.message.reply_text(
+                f"✅ Message sent successfully to User ID: `{target_user_id}`",
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to send message to user {target_user_id}: {e}")
+            await update.message.reply_text(
+                f"❌ Failed to send message to User ID: `{target_user_id}`\n\n"
+                f"Error: {str(e)}\n\n"
+                "Possible reasons:\n"
+                "1. User hasn't started the bot\n"
+                "2. User has blocked the bot\n"
+                "3. Invalid user ID",
+                parse_mode='Markdown'
+            )
+        
+        # Clear user data
+        context.user_data.clear()
+        
+        # Show admin menu again
+        await show_admin_menu(update, context)
+        
+        return ConversationHandler.END
+    except Exception as e:
+        logger.error(f"Error in send_message_to_user: {e}")
+        await update.message.reply_text(
+            "⚠️ An error occurred. Please try again with /start"
+        )
+        return ConversationHandler.END
 
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle admin approval/rejection"""
@@ -324,13 +451,17 @@ async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Clear user data
         context.user_data.clear()
         
-        # Show button to format more
-        keyboard = [[InlineKeyboardButton("📄 Format More IDs", callback_data="payment_format")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "Click below to format more IDs:",
-            reply_markup=reply_markup
-        )
+        # Show appropriate menu based on user
+        user_id = update.effective_user.id
+        if user_id == ADMIN_ID:
+            await show_admin_menu(update, context)
+        else:
+            keyboard = [[InlineKeyboardButton("📄 Format More IDs", callback_data="payment_format")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "Click below to format more IDs:",
+                reply_markup=reply_markup
+            )
         
         return ConversationHandler.END
     except Exception as e:
@@ -355,18 +486,28 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a help message"""
     try:
-        help_text = (
-            "🤖 Bot Commands:\n\n"
-            "/start - Start the bot and request approval\n"
-            "/help - Show this help message\n"
-            "/cancel - Cancel current operation\n\n"
-            "📋 How to use:\n"
-            "1. Send /start to request approval\n"
-            "2. Once approved, click 'Payment Format'\n"
-            "3. Send user IDs in any format\n"
-            "4. I'll show extracted IDs line by line\n"
-            "5. Enter the amount\n"
-            "6. Get formatted output: id amount\n\n"
+        user_id = update.effective_user.id
+        help_text = "🤖 Bot Commands:\n\n"
+        
+        if user_id == ADMIN_ID:
+            help_text += (
+                "👑 **Admin Commands:**\n"
+                "/start - Show admin menu\n"
+                "/help - Show this help message\n"
+                "/cancel - Cancel current operation\n\n"
+                "📋 **Admin Features:**\n"
+                "1. Approve/Reject user requests\n"
+                "2. Format payment IDs\n"
+                "3. Message users by ID\n\n"
+            )
+        else:
+            help_text += (
+                "/start - Start the bot and request approval\n"
+                "/help - Show this help message\n"
+                "/cancel - Cancel current operation\n\n"
+            )
+        
+        help_text += (
             f"For any queries, DM {OWNER_USERNAME}"
         )
         await update.message.reply_text(help_text)
@@ -403,38 +544,18 @@ def main():
         # Add callback query handler for admin approvals
         application.add_handler(CallbackQueryHandler(handle_approval, pattern=r'^(approve|reject)_\d+$'))
         
+        # Add callback query handler for payment format option
+        application.add_handler(CallbackQueryHandler(handle_payment_format, pattern=r'^payment_format$'))
+        
+        # Add callback query handler for message user option (admin only)
+        application.add_handler(CallbackQueryHandler(handle_message_user, pattern=r'^message_user$'))
+        
         # Create conversation handler for payment format
-        conv_handler = ConversationHandler(
+        payment_conv_handler = ConversationHandler(
             entry_points=[CallbackQueryHandler(handle_payment_format, pattern=r'^payment_format$')],
             states={
                 WAITING_FOR_IDS: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_ids)
                 ],
                 WAITING_FOR_AMOUNT: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, process_amount)
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            allow_reentry=True
-        )
         
-        application.add_handler(conv_handler)
-        
-        # Start the Bot
-        logger.info("🤖 Bot is starting...")
-        print("🤖 Bot is starting...")
-        print(f"Admin ID: {ADMIN_ID}")
-        print(f"Owner Username: {OWNER_USERNAME}")
-        
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True
-        )
-        
-    except Exception as e:
-        logger.error(f"Failed to start bot: {e}")
-        print(f"❌ Failed to start bot: {e}")
-        sys.exit(1)
-
-if __name__ == '__main__':
-    main()
