@@ -1,3 +1,4 @@
+
 import os
 import logging
 import re
@@ -558,4 +559,46 @@ def main():
                     MessageHandler(filters.TEXT & ~filters.COMMAND, process_user_ids)
                 ],
                 WAITING_FOR_AMOUNT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, process_amount)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+            allow_reentry=True
+        )
         
+        # Create conversation handler for messaging users
+        message_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(handle_message_user, pattern=r'^message_user$')],
+            states={
+                WAITING_FOR_USER_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_for_message)
+                ],
+                WAITING_FOR_MESSAGE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, send_message_to_user)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+            allow_reentry=True
+        )
+        
+        application.add_handler(payment_conv_handler)
+        application.add_handler(message_conv_handler)
+        
+        # Start the Bot
+        logger.info("🤖 Bot is starting...")
+        print("🤖 Bot is starting...")
+        print(f"Admin ID: {ADMIN_ID}")
+        print(f"Owner Username: {OWNER_USERNAME}")
+        
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        print(f"❌ Failed to start bot: {e}")
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
