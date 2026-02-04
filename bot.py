@@ -158,9 +158,10 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
 async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get user ID and create clickable link - FIXED"""
+    """Get user ID and create clickable link - SIMPLIFIED"""
     try:
         user_input = update.message.text.strip()
+        logger.info(f"Received user input for message: {user_input}")
         
         # Check if it's a valid user ID
         if not user_input.isdigit() or len(user_input) < 5:
@@ -462,11 +463,17 @@ def main():
         # Add callback query handler for admin approvals
         application.add_handler(CallbackQueryHandler(handle_approval, pattern=r'^(approve|reject)_\d+$'))
         
-        # Add callback query handler for payment format option
-        application.add_handler(CallbackQueryHandler(handle_payment_format, pattern=r'^payment_format$'))
-        
-        # Add callback query handler for message user option
-        application.add_handler(CallbackQueryHandler(handle_message_user, pattern=r'^message_user$'))
+        # Create conversation handler for messaging users - ADD THIS FIRST
+        message_conv_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(handle_message_user, pattern=r'^message_user$')],
+            states={
+                WAITING_FOR_USER_ID: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_for_message)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+            allow_reentry=True
+        )
         
         # Create conversation handler for payment format
         payment_conv_handler = ConversationHandler(
@@ -483,21 +490,9 @@ def main():
             allow_reentry=True
         )
         
-        # Create conversation handler for messaging users
-        message_conv_handler = ConversationHandler(
-            entry_points=[CallbackQueryHandler(handle_message_user, pattern=r'^message_user$')],
-            states={
-                WAITING_FOR_USER_ID: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_for_message)
-                ],
-            },
-            fallbacks=[CommandHandler("cancel", cancel)],
-            allow_reentry=True
-        )
-        
-        # Add conversation handlers in correct order
-        application.add_handler(message_conv_handler)
-        application.add_handler(payment_conv_handler)
+        # Add conversation handlers in CORRECT ORDER
+        application.add_handler(message_conv_handler)  # FIRST
+        application.add_handler(payment_conv_handler)  # SECOND
         
         # Start the Bot
         logger.info("🤖 Bot is starting...")
