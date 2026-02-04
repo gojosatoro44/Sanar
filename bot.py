@@ -1,4 +1,3 @@
-
 import os
 import logging
 import re
@@ -43,7 +42,7 @@ except ValueError:
     sys.exit(1)
 
 # Conversation states
-WAITING_FOR_IDS, WAITING_FOR_AMOUNT, WAITING_FOR_USER_ID, WAITING_FOR_MESSAGE = range(4)
+WAITING_FOR_IDS, WAITING_FOR_AMOUNT, WAITING_FOR_USER_ID = range(3)
 
 # Store approvals in memory (will reset on restart)
 pending_approvals = {}
@@ -162,7 +161,7 @@ async def handle_message_user(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
 async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Get user ID to message"""
+    """Get user ID and provide clickable link"""
     try:
         user_input = update.message.text.strip()
         
@@ -174,67 +173,29 @@ async def get_user_id_for_message(update: Update, context: ContextTypes.DEFAULT_
             return WAITING_FOR_USER_ID
         
         user_id = int(user_input)
-        context.user_data['message_user_id'] = user_id
+        
+        # Create clickable link button
+        keyboard = [[
+            InlineKeyboardButton(
+                f"📨 Message User {user_id}",
+                url=f"tg://openmessage?user_id={user_id}"
+            )
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            f"✅ User ID received: `{user_id}`\n\n"
-            "Now send me the message you want to send to this user:",
+            f"✅ User ID: `{user_id}`\n\n"
+            "Click the button below to message this user directly:",
+            reply_markup=reply_markup,
             parse_mode='Markdown'
         )
-        
-        return WAITING_FOR_MESSAGE
-    except Exception as e:
-        logger.error(f"Error in get_user_id_for_message: {e}")
-        await update.message.reply_text(
-            "⚠️ An error occurred. Please try again with /start"
-        )
-        return ConversationHandler.END
-
-async def send_message_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send message to user"""
-    try:
-        message_text = update.message.text
-        target_user_id = context.user_data.get('message_user_id')
-        
-        if not target_user_id:
-            await update.message.reply_text(
-                "❌ No user ID found. Please start over with /start"
-            )
-            return ConversationHandler.END
-        
-        # Try to send message
-        try:
-            await context.bot.send_message(
-                chat_id=target_user_id,
-                text=f"📨 Message from Admin:\n\n{message_text}"
-            )
-            
-            await update.message.reply_text(
-                f"✅ Message sent successfully to User ID: `{target_user_id}`",
-                parse_mode='Markdown'
-            )
-            
-        except Exception as e:
-            logger.error(f"Failed to send message to user {target_user_id}: {e}")
-            await update.message.reply_text(
-                f"❌ Failed to send message to User ID: `{target_user_id}`\n\n"
-                f"Error: {str(e)}\n\n"
-                "Possible reasons:\n"
-                "1. User hasn't started the bot\n"
-                "2. User has blocked the bot\n"
-                "3. Invalid user ID",
-                parse_mode='Markdown'
-            )
-        
-        # Clear user data
-        context.user_data.clear()
         
         # Show admin menu again
         await show_admin_menu(update, context)
         
         return ConversationHandler.END
     except Exception as e:
-        logger.error(f"Error in send_message_to_user: {e}")
+        logger.error(f"Error in get_user_id_for_message: {e}")
         await update.message.reply_text(
             "⚠️ An error occurred. Please try again with /start"
         )
@@ -572,9 +533,6 @@ def main():
             states={
                 WAITING_FOR_USER_ID: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_for_message)
-                ],
-                WAITING_FOR_MESSAGE: [
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, send_message_to_user)
                 ],
             },
             fallbacks=[CommandHandler("cancel", cancel)],
