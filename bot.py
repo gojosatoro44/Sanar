@@ -130,10 +130,12 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_info = pending_approvals.get(user_id, {})
             await query.edit_message_text(
                 f"✅ User Approved:\n\n"
+                f"```\n"
                 f"User ID: {user_id}\n"
                 f"Username: @{user_info.get('username', 'No username')}\n"
-                f"Name: {user_info.get('first_name', '')} {user_info.get('last_name', '')}",
-                reply_markup=None
+                f"Name: {user_info.get('first_name', '')} {user_info.get('last_name', '')}\n"
+                f"```",
+                parse_mode='Markdown'
             )
             
             # Notify user
@@ -151,10 +153,12 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_info = pending_approvals.get(user_id, {})
             await query.edit_message_text(
                 f"❌ User Rejected:\n\n"
+                f"```\n"
                 f"User ID: {user_id}\n"
                 f"Username: @{user_info.get('username', 'No username')}\n"
-                f"Name: {user_info.get('first_name', '')} {user_info.get('last_name', '')}",
-                reply_markup=None
+                f"Name: {user_info.get('first_name', '')} {user_info.get('last_name', '')}\n"
+                f"```",
+                parse_mode='Markdown'
             )
             
             # Notify user
@@ -217,7 +221,8 @@ async def handle_payment_format(update: Update, context: ContextTypes.DEFAULT_TY
             "7944746107 2.1\n"
             "7891172965 2.1\n"
             "```\n\n"
-            "Please send your IDs now:"
+            "Please send your IDs now:",
+            parse_mode='Markdown'
         )
         
         return WAITING_FOR_IDS
@@ -226,7 +231,7 @@ async def handle_payment_format(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
 async def process_user_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process user IDs and extract them"""
+    """Process user IDs and extract them - show in monospace"""
     try:
         message_text = update.message.text
         
@@ -247,7 +252,8 @@ async def process_user_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "7944746107\n"
                 "7891172965\n"
                 "```\n\n"
-                "Please send IDs again:"
+                "Please send IDs again:",
+                parse_mode='Markdown'
             )
             return WAITING_FOR_IDS
         
@@ -262,7 +268,7 @@ async def process_user_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Store in context
         context.user_data['user_ids'] = unique_ids
         
-        # Show extracted IDs line by line
+        # Show extracted IDs line by line in monospace
         ids_formatted = '\n'.join(unique_ids)
         
         await update.message.reply_text(
@@ -281,7 +287,7 @@ async def process_user_ids(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
 async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Process the amount and generate final output"""
+    """Process the amount and generate final output in monospace"""
     try:
         amount = update.message.text.strip()
         
@@ -307,11 +313,11 @@ async def process_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         final_output = '\n'.join(formatted_lines)
         
-        # Send the final formatted result
+        # Send the final formatted result in monospace
         await update.message.reply_text(
             "✅ Here's your formatted output:\n\n"
             f"```\n{final_output}\n```\n\n"
-            "Use /start to format more IDs.",
+            "📋 **Easy to copy:** Just tap and hold on the text above, then select 'Copy'",
             parse_mode='Markdown'
         )
         
